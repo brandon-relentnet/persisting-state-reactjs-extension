@@ -1,14 +1,17 @@
 // src/components/Counter.js
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { setCounter, increment, decrement, clear } from "../store/counterSlice";
 /*global chrome*/
 const Counter = () => {
-  const [counter, setCounter] = useState(0);
+  const dispatch = useDispatch();
+  const counter = useSelector((state) => state.counter.value); // Get the counter from Redux
 
   // Load the initial counter value from chrome.storage.local
   useEffect(() => {
     chrome.storage.local.get(["counter"], (result) => {
       if (result && result.counter !== undefined) {
-        setCounter(result.counter);
+        dispatch(setCounter(result.counter)); // Initialize Redux state with stored counter
       } else {
         console.error(
           "Initial counter value missing from chrome.storage:",
@@ -24,14 +27,14 @@ const Counter = () => {
         message.type === "COUNTER_UPDATED" &&
         message.counter !== undefined
       ) {
-        setCounter(message.counter); // Update the local state
+        dispatch(setCounter(message.counter)); // Sync Redux state with broadcasted counter
       } else if (message.type !== "GET_COUNTER") {
-        console.warn("Ignoring unrelated message:", message); // Only log unrelated messages
+        console.warn("Ignoring unrelated message:", message); // Ignore other messages
       }
     });
-  }, []);
+  }, [dispatch]);
 
-  // Update chrome.storage.local and broadcast the updated counter to all tabs
+  // Sync Redux counter to storage and broadcast
   const syncCounterToStorage = (newCounterValue) => {
     chrome.storage.local.set({ counter: newCounterValue }, () => {
       chrome.runtime.sendMessage({
@@ -43,22 +46,20 @@ const Counter = () => {
 
   // Handle the Increment Button Click
   const handleIncrement = () => {
-    const newCounter = counter + 1;
-    setCounter(newCounter); // Update the local state first
-    syncCounterToStorage(newCounter); // Push the updated value to storage and broadcast
+    dispatch(increment()); // Dispatch the increment action
+    syncCounterToStorage(counter + 1); // Sync new state to storage and broadcast
   };
 
   // Handle the Decrement Button Click
   const handleDecrement = () => {
-    const newCounter = counter - 1;
-    setCounter(newCounter);
-    syncCounterToStorage(newCounter);
+    dispatch(decrement()); // Dispatch the decrement action
+    syncCounterToStorage(counter - 1); // Sync new state to storage and broadcast
   };
 
   // Handle the Clear Button Click
   const handleClear = () => {
-    setCounter(0);
-    syncCounterToStorage(0);
+    dispatch(clear()); // Dispatch the clear action
+    syncCounterToStorage(0); // Sync the reset state to storage and broadcast
   };
 
   return (
