@@ -1,53 +1,50 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
+import { useDispatch, useSelector } from "react-redux";
+import { increment, setCounter } from "./store/counterSlice";
+/*global chrome*/
+const App = () => {
+  const dispatch = useDispatch();
+  const counter = useSelector((state) => state.counter.value);
 
-function App() {
-  const [counter, setCounter] = useState(0);
+ useEffect(() => {
+   // Sync Redux state with chrome.storage.local
+   chrome.storage.local.get(["counter"], (result) => {
+     if (result && result.counter !== undefined) {
+       dispatch(setCounter(result.counter));
+     } else {
+       console.error(
+         "Initial counter value missing from chrome.storage:",
+         result
+       );
+     }
+   });
 
-  useEffect(() => {
-    // Listen for counter updates from the content script
-    const handleMessage = (event) => {
-      if (event.data && event.data.type === "COUNTER_UPDATED") {
-        setCounter(event.data.counter);
-      }
-    };
+   // Listen for `COUNTER_UPDATED` messages from the background script
+   chrome.runtime.onMessage.addListener((message) => {
+     if (
+       message &&
+       message.type === "COUNTER_UPDATED" &&
+       message.counter !== undefined
+     ) {
+       dispatch(setCounter(message.counter));
+     }
+     // No need to handle GET_COUNTER or INCREMENT_COUNTER messages
+   });
+ }, [dispatch]);
 
-    window.addEventListener("message", handleMessage);
+ // Handle the Increment Button Click
+ const handleIncrement = () => {
+   // Send only to the background script, not globally
+   chrome.runtime.sendMessage({ type: "INCREMENT_COUNTER" });
+ };
 
-    // Clean up the event listener
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, []);
-
-  const incrementCounter = () => {
-    console.log("Increment button clicked");
-    window.parent.postMessage({ type: "INCREMENT_COUNTER" }, "*");
-  };
-
-  useEffect(() => {
-    const handleMessage = (event) => {
-      if (event.data && event.data.type === "COUNTER_UPDATED") {
-        console.log(
-          "Received counter update from content script:",
-          event.data.counter
-        );
-        setCounter(event.data.counter);
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-
-    return () => {
-      window.removeEventListener("message", handleMessage);
-    };
-  }, []);
 
   return (
     <div className="App">
-      <h1>Shared Counter: {counter}</h1>
-      <button onClick={incrementCounter}>Increment Counter</button>
+      <h1>Counter: {counter}</h1>
+      <button onClick={handleIncrement}>Increment Counter</button>
     </div>
   );
-}
+};
 
 export default App;
