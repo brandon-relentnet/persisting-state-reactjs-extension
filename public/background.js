@@ -9,10 +9,26 @@ chrome.runtime.onInstalled.addListener(() => {
   });
 });
 
+// Helper function to check if a tab has the content script already injected
+function checkContentScriptInjected(tabId, callback) {
+  chrome.scripting.executeScript(
+    {
+      target: { tabId: tabId },
+      func: () => !!window.myCounterExtensionInjected, // This variable is set when the content script is injected
+    },
+    (results) => {
+      if (results && results[0] && results[0].result) {
+        callback(true); // Content script is already injected
+      } else {
+        callback(false); // Content script is not injected
+      }
+    }
+  );
+}
+
 // Listen for incoming messages from content scripts or iframes
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.type === "GET_COUNTER") {
-    // Send the current counter state
     sendResponse({ counter: counterState });
   }
 
@@ -25,31 +41,45 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       console.log("Counter state saved to local storage:", counterState);
     });
 
-    // Broadcast the updated state to all tabs
+    // Query all open tabs and only send updates to tabs with content script already injected
     chrome.tabs.query({}, (tabs) => {
       tabs.forEach((tab) => {
-        // Inject the content script if necessary, then send the message
-        chrome.scripting.executeScript(
-          {
-            target: { tabId: tab.id },
-            files: ["content.js"],
-          },
-          () => {
-            // After ensuring content script is injected, send the message
+        const url = tab.url || "";
+
+        // Skip restricted URLs
+        if (
+          url.startsWith("chrome://") ||
+          url.startsWith("file://") ||
+          url.startsWith("https://chrome.google.com")
+        ) {
+          console.log(`Skipping restricted tab ${tab.id} with URL ${url}`);
+          return;
+        }
+
+        // Check if the content script is injected
+        checkContentScriptInjected(tab.id, (isInjected) => {
+          if (isInjected) {
+            console.log(`Sending message to tab ${tab.id} with URL ${url}`);
+            // Send the message to the tab with the content script
             chrome.tabs.sendMessage(
               tab.id,
               { type: "COUNTER_UPDATED", counter: counterState },
               (response) => {
                 if (chrome.runtime.lastError) {
                   console.error(
-                    `Error sending message to tab ${tab.id}:`,
-                    chrome.runtime.lastError.message
+                    `Error sending message to tab ${tab.id} with URL ${url}: ${chrome.runtime.lastError.message}`
                   );
+                } else if (response && response.success) {
+                  console.log(
+                    `Message successfully received by tab ${tab.id} with URL ${url}`
+                  );
+                } else {
+                  console.warn(`Unexpected response from tab ${tab.id}`);
                 }
               }
             );
           }
-        );
+        });
       });
     });
 

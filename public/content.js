@@ -1,7 +1,9 @@
 (function () {
+  // Set a flag to indicate the content script is injected
+  window.myCounterExtensionInjected = true;
+
   // Check if the iframe already exists
   if (document.getElementById("my-counter-iframe")) {
-    console.log("Iframe already exists. Skipping injection.");
     return; // If the iframe is already there, don't create a new one
   }
 
@@ -29,7 +31,7 @@
   });
 
   // Listen for counter updates from the background script
-  chrome.runtime.onMessage.addListener((message) => {
+  chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.type === "COUNTER_UPDATED") {
       // Post the updated counter value to the iframe
       iframe.contentWindow.postMessage(
@@ -37,6 +39,9 @@
         "*"
       );
     }
+
+    // Send an acknowledgment response back to the background script
+    sendResponse({ success: true });
   });
 
   // Request the current counter state from the background script when the iframe loads
