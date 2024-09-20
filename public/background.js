@@ -26,64 +26,53 @@ function checkContentScriptInjected(tabId, callback) {
   );
 }
 
-// Listen for incoming messages from content scripts or React app
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.type === "GET_COUNTER") {
-    // Send the current counter state in response to GET_COUNTER
-    sendResponse({ counter: counterState });
-  }
+// Broadcast the updated counter to all tabs
+function broadcastCounterUpdated(counter) {
+  chrome.tabs.query({}, (tabs) => {
+    tabs.forEach((tab) => {
+      const url = tab.url || "";
 
-  if (message.type === "INCREMENT_COUNTER") {
-    // Increment the counter state
-    counterState++;
+      // Skip restricted URLs (chrome://, file://, etc.)
+      if (
+        url.startsWith("chrome://") ||
+        url.startsWith("file://") ||
+        url.startsWith("https://chrome.google.com")
+      ) {
+        console.log(`Skipping restricted tab ${tab.id} with URL ${url}`);
+        return;
+      }
 
-    // Save the updated counter state to chrome.storage.local
-    chrome.storage.local.set({ counter: counterState }, () => {
-      console.log("Counter state saved to local storage:", counterState);
-    });
-
-    // Query all open tabs and send updates only to tabs with the content script injected
-    chrome.tabs.query({}, (tabs) => {
-      tabs.forEach((tab) => {
-        const url = tab.url || "";
-
-        // Skip restricted URLs (chrome://, file://, etc.)
-        if (
-          url.startsWith("chrome://") ||
-          url.startsWith("file://") ||
-          url.startsWith("https://chrome.google.com")
-        ) {
-          console.log(`Skipping restricted tab ${tab.id} with URL ${url}`);
-          return;
-        }
-
-        // Check if the content script is injected
-        checkContentScriptInjected(tab.id, (isInjected) => {
-          if (isInjected) {
-            // Send COUNTER_UPDATED to tabs with the content script injected
-            chrome.tabs.sendMessage(
-              tab.id,
-              { type: "COUNTER_UPDATED", counter: counterState },
-              (response) => {
-                if (chrome.runtime.lastError) {
-                  console.error(
-                    `Error sending message to tab ${tab.id} with URL ${url}: ${chrome.runtime.lastError.message}`
-                  );
-                } else {
-                  console.log(`Message successfully sent to tab ${tab.id}`);
-                }
+      // Check if the content script is injected
+      checkContentScriptInjected(tab.id, (isInjected) => {
+        if (isInjected) {
+          // Send COUNTER_UPDATED to tabs with the content script injected
+          chrome.tabs.sendMessage(
+            tab.id,
+            { type: "COUNTER_UPDATED", counter },
+            (response) => {
+              if (chrome.runtime.lastError) {
+                console.error(
+                  `Error sending message to tab ${tab.id} with URL ${url}: ${chrome.runtime.lastError.message}`
+                );
               }
-            );
-          } else {
-            console.log(
-              `Content script not injected in tab ${tab.id}, skipping...`
-            );
-          }
-        });
+            }
+          );
+        } else {
+          console.log(
+            `Content script not injected in tab ${tab.id}, skipping...`
+          );
+        }
       });
     });
+  });
+}
 
-    sendResponse({ counter: counterState });
+// Listen for incoming messages from content scripts or React app
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+  if (message.type === "COUNTER_UPDATED") {
+    // Update the counter state and broadcast it to all tabs
+    counterState = message.counter;
+    broadcastCounterUpdated(counterState);
   }
 
   return true; // Keeps the message port open for async tasks
