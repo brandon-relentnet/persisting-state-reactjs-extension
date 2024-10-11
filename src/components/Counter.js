@@ -3,38 +3,45 @@ import React, { useEffect } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { setCounter, increment, decrement, clear } from "../store/counterSlice";
 /*global chrome*/
+
 const Counter = () => {
   const dispatch = useDispatch();
-  const counter = useSelector((state) => state.counter.value); // Get the counter from Redux
+  const { value: counter } = useSelector((state) => state.counter); // Destructure selector state
 
   // Load the initial counter value from chrome.storage.local
   useEffect(() => {
     chrome.storage.local.get(["counter"], (result) => {
-      if (result && result.counter !== undefined) {
-        dispatch(setCounter(result.counter)); // Initialize Redux state with stored counter
-      } else {
-        console.error(
-          "Initial counter value missing from chrome.storage:",
-          result
-        );
+      if (
+        result &&
+        result.counter !== undefined &&
+        result.counter !== counter
+      ) {
+        dispatch(setCounter(result.counter)); // Only update if value differs
       }
     });
 
-    // Listen for `COUNTER_UPDATED` messages from the background script
-    chrome.runtime.onMessage.addListener((message) => {
+    const messageListener = (message) => {
       if (
-        message &&
-        message.type === "COUNTER_UPDATED" &&
+        message?.type === "COUNTER_UPDATED" &&
         message.counter !== undefined
       ) {
-        dispatch(setCounter(message.counter)); // Sync Redux state with broadcasted counter
+        if (message.counter !== counter) {
+          dispatch(setCounter(message.counter)); // Sync only if counter differs
+        }
       } else if (message.type !== "GET_COUNTER") {
         console.warn("Ignoring unrelated message:", message); // Ignore other messages
       }
-    });
-  }, [dispatch]);
+    };
 
-  // Sync Redux counter to storage and broadcast
+    chrome.runtime.onMessage.addListener(messageListener);
+
+    // Cleanup listener on component unmount to prevent memory leaks
+    return () => {
+      chrome.runtime.onMessage.removeListener(messageListener);
+    };
+  }, [dispatch, counter]);
+
+  // Debounced storage sync function to avoid excessive writes
   const syncCounterToStorage = (newCounterValue) => {
     chrome.storage.local.set({ counter: newCounterValue }, () => {
       chrome.runtime.sendMessage({
@@ -46,14 +53,16 @@ const Counter = () => {
 
   // Handle the Increment Button Click
   const handleIncrement = () => {
+    const newCounter = counter + 1;
     dispatch(increment()); // Dispatch the increment action
-    syncCounterToStorage(counter + 1); // Sync new state to storage and broadcast
+    syncCounterToStorage(newCounter); // Sync new state to storage and broadcast
   };
 
   // Handle the Decrement Button Click
   const handleDecrement = () => {
+    const newCounter = counter - 1;
     dispatch(decrement()); // Dispatch the decrement action
-    syncCounterToStorage(counter - 1); // Sync new state to storage and broadcast
+    syncCounterToStorage(newCounter); // Sync new state to storage and broadcast
   };
 
   // Handle the Clear Button Click
